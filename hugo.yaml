@@ -1,0 +1,16 @@
+baseURL: https://th-devx.github.io/
+languageCode: en-us
+title: th-devx blog
+theme: ananke
+
+menu:
+  main:
+    - name: Home
+      pageRef: /
+      weight: 10
+    - name: About
+      pageRef: /about
+      weight: 20
+    - name: Posts
+      pageRef: /posts
+      weight: 30
