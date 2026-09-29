@@ -10,9 +10,13 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;
   padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
-header{background:var(--ink);color:#F2F0EA;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px}
-header h1{margin:0;font-size:18px;font-weight:600}
-header input{width:150px;min-height:40px;border-radius:8px;border:1px solid #4A4F5A;background:#22252B;color:#fff;padding:0 10px;font:inherit}
+header{background:var(--ink);color:#F2F0EA;position:relative;overflow:hidden}
+.hero{max-width:640px;margin:0 auto;height:150px;display:flex;align-items:stretch;justify-content:space-between;gap:8px;padding:0 0 0 16px}
+.brand{display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:150px;z-index:1}
+.brand .place{font-size:22px;font-weight:600;letter-spacing:.2px;line-height:1.1}
+.brand h1{margin:0;font-size:14px;font-weight:500;color:#B9BCC4}
+header input{width:150px;min-height:40px;margin-top:8px;border-radius:8px;border:1px solid #4A4F5A;background:#22252B;color:#fff;padding:0 10px;font:inherit}
+#diorama{flex:1;min-width:0;height:150px;display:block}
 main{max-width:480px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:14px}
 .btn{display:flex;align-items:center;justify-content:center;min-height:56px;border-radius:10px;border:2px solid var(--ink);
   background:#fff;color:var(--ink);font:600 17px 'IBM Plex Sans',sans-serif;cursor:pointer;width:100%;
@@ -50,8 +54,14 @@ label.f input{min-height:48px;border-radius:10px;border:1px solid #B5B1A5;paddin
 </head>
 <body>
 <header>
-  <h1>Gate check</h1>
-  <input id="guard" aria-label="Guard name" placeholder="Guard name">
+  <div class="hero">
+    <div class="brand">
+      <div class="place">Irina by Myra</div>
+      <h1>Gate check</h1>
+      <input id="guard" aria-label="Guard name" placeholder="Guard name">
+    </div>
+    <canvas id="diorama" aria-hidden="true"></canvas>
+  </div>
 </header>
 <main>
   <label class="btn primary" for="cam">Take photo of plate</label>
@@ -92,6 +102,82 @@ label.f input{min-height:48px;border-radius:10px;border:1px solid #B5B1A5;paddin
 </main>
 <div id="toast" class="hidden" role="status"></div>
 
+<script>
+// Voxel diorama of the Irina by Myra site: apartment compound on the left, terrace rows and park on the right.
+(function () {
+  const C = {
+    sand: '#E8D5B9', lot: '#4B5B58', canal: '#2B6F87', pool: '#46B4E6', tower: '#EFEEE8', wing: '#BFE3CF',
+    podium: '#C5CACE', court: '#E0592A', tree: '#5C9E4C', hall: '#B7BABE', basin: '#1D4F6C', park: '#9ACB72',
+    brown: '#8C786A', teal: '#27A596', blue: '#5E82D3', orange: '#F2A33A'
+  };
+  const V = new Map();
+  const put = (x, y, z, c) => V.set(x + ',' + y + ',' + z, { x, y, z, c });
+  const box = (x0, x1, y0, y1, z0, z1, c) => {
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) put(x, y, z, c);
+  };
+  const X = 32, Y = 16;
+  box(0, X - 1, 0, Y - 1, 0, 0, C.sand);
+  box(0, 10, 0, Y - 1, 0, 0, C.lot);
+  box(11, 12, 0, Y - 1, 0, 0, C.canal);
+  box(1, 3, 1, 4, 0, 0, C.pool);
+  box(1, 2, 14, 15, 0, 0, C.court);
+  box(2, 4, 6, 13, 1, 3, C.podium);
+  box(6, 8, 3, 12, 1, 11, C.tower);
+  box(6, 8, 9, 12, 1, 11, C.wing);
+  box(6, 9, 14, 15, 1, 2, C.hall);
+  [[0, 1], [0, 7], [0, 11], [9, 2], [9, 6], [5, 1], [9, 10]].forEach(([x, y]) => put(x, y, 1, C.tree));
+  box(13, 20, 0, 1, 0, 0, C.basin);
+  const row = (x, y0, y1, c) => box(x, x + 1, y0, y1, 1, 2, c);
+  row(14, 3, 8, C.brown); row(14, 10, 15, C.brown);
+  row(17, 3, 8, C.teal);  row(17, 10, 15, C.teal);
+  row(20, 2, 8, C.blue);  row(20, 10, 15, C.teal);
+  box(23, 26, 2, 12, 0, 0, C.park);
+  [[23, 4], [25, 3], [24, 7], [26, 9], [23, 11], [25, 12], [26, 5]].forEach(([x, y]) => put(x, y, 1, C.tree));
+  row(28, 1, 6, C.blue); row(28, 8, 15, C.orange); row(30, 3, 15, C.orange);
+
+  const cubes = [...V.values()].sort((a, b) => (a.x + a.y) - (b.x + b.y) || a.z - b.z);
+  const has = (x, y, z) => V.has(x + ',' + y + ',' + z);
+  const shade = (hex, f) => {
+    const n = parseInt(hex.slice(1), 16);
+    const ch = (v) => Math.round(Math.min(255, v * f)).toString(16).padStart(2, '0');
+    return '#' + ch(n >> 16) + ch((n >> 8) & 255) + ch(n & 255);
+  };
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  cubes.forEach((v) => {
+    const sx = v.x - v.y, sy = (v.x + v.y) / 2 - v.z;
+    minX = Math.min(minX, sx - 1); maxX = Math.max(maxX, sx + 1);
+    minY = Math.min(minY, sy); maxY = Math.max(maxY, sy + 2);
+  });
+
+  const cv = document.getElementById('diorama');
+  function draw() {
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const s = Math.max(2, Math.min(7, Math.floor(Math.min((w - 8) / (maxX - minX), (h - 12) / (maxY - minY)))));
+    const ox = Math.round(w - 8 - maxX * s), oy = Math.round((h - (maxY - minY) * s) / 2 - minY * s);
+    ctx.lineWidth = 0.6; ctx.lineJoin = 'round';
+    const face = (pts, col) => {
+      ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
+      for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+      ctx.closePath(); ctx.fillStyle = col; ctx.strokeStyle = col; ctx.fill(); ctx.stroke();
+    };
+    cubes.forEach((v) => {
+      const X0 = ox + (v.x - v.y) * s, Y0 = oy + (v.x + v.y) * s / 2 - v.z * s, hs = s / 2;
+      if (!has(v.x, v.y, v.z + 1)) face([X0, Y0, X0 + s, Y0 + hs, X0, Y0 + s, X0 - s, Y0 + hs], v.c);
+      if (!has(v.x, v.y + 1, v.z)) face([X0 - s, Y0 + hs, X0, Y0 + s, X0, Y0 + 2 * s, X0 - s, Y0 + 3 * hs], shade(v.c, 0.8));
+      if (!has(v.x + 1, v.y, v.z)) face([X0, Y0 + s, X0 + s, Y0 + hs, X0 + s, Y0 + 3 * hs, X0, Y0 + 2 * s], shade(v.c, 0.64));
+    });
+  }
+  let t;
+  window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(draw, 120); });
+  draw();
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycby-CgRJOA3LPsMjRmXcBi-6cIil0baWEAr458HQaVtlrOxqE10PjSnNU24oabGR3yRn/exec';
@@ -103,7 +189,7 @@ let worker = null, current = null, category = '';
 try { $('guard').value = localStorage.getItem('guard') || ''; } catch (e) {}
 $('guard').addEventListener('change', () => { try { localStorage.setItem('guard', $('guard').value); } catch (e) {} });
 
-function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), 2600); }
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), 4500); }
 function pretty(p) { const m = /^([A-Z]+)(\d+)([A-Z]*)$/.exec(p || ''); return m ? [m[1], m[2], m[3]].filter(Boolean).join(' ') : (p || ''); }
 function norm(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
@@ -164,10 +250,23 @@ $('cam').addEventListener('change', async (e) => {
 $('check').addEventListener('click', () => check());
 $('plate').addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
 
+// Google occasionally fails to hand back the reply (404 on the script.googleusercontent.com step) even though
+// the script ran. Retry once; the backend refuses duplicate logs, so a retry can never create a second row.
 async function api(params) {
   const q = new URLSearchParams(Object.assign({ key: API_KEY }, params));
-  const r = await fetch(API_URL + '?' + q.toString());
-  return r.json();
+  const url = API_URL + '?' + q.toString();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(url, { credentials: 'omit', cache: 'no-store', redirect: 'follow' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      data._retried = attempt > 0;
+      return data;
+    } catch (err) {
+      if (attempt === 1) throw err;
+      await new Promise((ok) => setTimeout(ok, 800));
+    }
+  }
 }
 
 async function check(plateOverride) {
@@ -180,7 +279,7 @@ async function check(plateOverride) {
     if (!res.ok) { toast(res.error || 'Check failed'); return; }
     current = res; category = ''; show(res);
   } catch (err) {
-    toast('No connection to the sheet. Log on paper for now.');
+    toast('Could not reach the sheet. Tap Check again, or log on paper.');
   } finally {
     $('check').disabled = false; $('check').textContent = 'Check';
   }
@@ -241,10 +340,13 @@ async function log(action) {
       action: 'log', plate: current.plate, result: current.status, category: category,
       unit: current.status === 'visitor' ? $('unit').value : current.unit, guard: $('guard').value, act: action
     });
-    if (res.ok) { recentLogs[key] = Date.now(); logged(action, res); }
+    if (res.ok) {
+      if (res.duplicate && res._retried) res.duplicate = false;
+      recentLogs[key] = Date.now(); logged(action, res);
+    }
     else toast(res.error || 'Not saved. Tap again.');
   } catch (err) {
-    toast('No connection. Not saved, tap again.');
+    toast('Could not confirm. Tap again, it will not be logged twice.');
   } finally {
     busy = false;
     btn.textContent = label;
