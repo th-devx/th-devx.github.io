@@ -6,7 +6,7 @@
 <title>Gate check</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#F2F0EA;--ink:#15171C;--muted:#4A4F5A;--line:#D9D6CC;--res:#1D4ED8;--flag:#B45309;--vis:#3F4652}
+:root{--bg:#F2F0EA;--ink:#15171C;--muted:#4A4F5A;--line:#D9D6CC;--res:#1D4ED8;--flag:#B45309;--vis:#3F4652;--ok:#0F6E5E}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;
   padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
@@ -15,9 +15,16 @@ header h1{margin:0;font-size:18px;font-weight:600}
 header input{width:150px;min-height:40px;border-radius:8px;border:1px solid #4A4F5A;background:#22252B;color:#fff;padding:0 10px;font:inherit}
 main{max-width:480px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:14px}
 .btn{display:flex;align-items:center;justify-content:center;min-height:56px;border-radius:10px;border:2px solid var(--ink);
-  background:#fff;color:var(--ink);font:600 17px 'IBM Plex Sans',sans-serif;cursor:pointer;width:100%}
+  background:#fff;color:var(--ink);font:600 17px 'IBM Plex Sans',sans-serif;cursor:pointer;width:100%;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform .08s,background-color .08s}
 .btn.primary{background:var(--ink);color:#fff}
-.btn:disabled{opacity:.5}
+.btn:active:not(:disabled){transform:scale(.96);background:#D9D6CC}
+.btn.primary:active:not(:disabled){background:#3A3F47}
+.btn:disabled{opacity:.55;cursor:default}
+.spin{width:18px;height:18px;border:2.5px solid currentColor;border-right-color:transparent;border-radius:50%;margin-right:10px;
+  animation:sp .7s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none;border-right-color:currentColor;opacity:.6}.btn{transition:none}}
 #preview{width:100%;max-height:180px;object-fit:contain;border-radius:10px;background:#D9D6CC;display:none}
 .row{display:flex;gap:8px}
 #plate{flex:1;min-height:56px;border-radius:10px;border:2px solid var(--ink);padding:0 12px;
@@ -166,7 +173,8 @@ async function api(params) {
 async function check(plateOverride) {
   const plate = norm(plateOverride || $('plate').value);
   if (!plate) { toast('Enter a plate number first'); return; }
-  $('check').disabled = true; $('check').textContent = '…';
+  clearTimeout(resetTimer);
+  $('check').disabled = true; $('check').innerHTML = '<span class="spin" style="margin:0" aria-label="Checking"></span>';
   try {
     const res = await api({ action: 'check', plate });
     if (!res.ok) { toast(res.error || 'Check failed'); return; }
@@ -211,23 +219,54 @@ document.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', ()
   document.querySelectorAll('.chip').forEach((x) => x.setAttribute('aria-pressed', String(x === c)));
 }));
 
+let busy = false, resetTimer = null;
+const recentLogs = {};
+
 async function log(action) {
-  if (!current) return;
+  if (!current || busy) return;
   if (current.status === 'visitor' && action === 'entry' && !category) { toast('Pick a visitor type first'); return; }
+
+  const key = current.plate + '|' + action;
+  const ago = recentLogs[key] ? Math.round((Date.now() - recentLogs[key]) / 1000) : null;
+  if (ago !== null && ago < 120 &&
+      !confirm(pretty(current.plate) + ' ' + action + ' was logged ' + ago + ' seconds ago. Log it again?')) return;
+
+  const btn = action === 'entry' ? $('logIn') : $('logOut');
+  const label = btn.textContent;
+  busy = true;
+  $('logIn').disabled = true; $('logOut').disabled = true;
+  btn.innerHTML = '<span class="spin" aria-hidden="true"></span>Logging…';
   try {
     const res = await api({
       action: 'log', plate: current.plate, result: current.status, category: category,
       unit: current.status === 'visitor' ? $('unit').value : current.unit, guard: $('guard').value, act: action
     });
-    if (!res.ok) { toast(res.error || 'Log failed'); return; }
-    toast((action === 'entry' ? 'Entry' : 'Exit') + ' logged for ' + pretty(current.plate));
-    reset();
-  } catch (err) { toast('No connection. Entry not saved.'); }
+    if (res.ok) { recentLogs[key] = Date.now(); logged(action, res); }
+    else toast(res.error || 'Not saved. Tap again.');
+  } catch (err) {
+    toast('No connection. Not saved, tap again.');
+  } finally {
+    busy = false;
+    btn.textContent = label;
+    $('logIn').disabled = false; $('logOut').disabled = false;
+  }
 }
 $('logIn').addEventListener('click', () => log('entry'));
 $('logOut').addEventListener('click', () => log('exit'));
 
+function logged(action, res) {
+  const time = res.at || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  ['suggest', 'visitor', 'actions'].forEach((id) => $(id).classList.add('hidden'));
+  $('band').style.background = 'var(--ok)';
+  $('bandTitle').textContent = res.duplicate ? 'Already logged' : (action === 'entry' ? 'Entry logged' : 'Exit logged');
+  $('bandSub').textContent = pretty(current.plate) + ' at ' + time + (res.duplicate ? ', not saved twice' : '');
+  current = null;
+  clearTimeout(resetTimer);
+  resetTimer = setTimeout(reset, 2500);
+}
+
 function reset() {
+  clearTimeout(resetTimer);
   current = null; category = ''; $('plate').value = ''; $('ocrStatus').textContent = '';
   $('preview').style.display = 'none';
   ['result', 'suggest', 'visitor', 'actions'].forEach((id) => $(id).classList.add('hidden'));
